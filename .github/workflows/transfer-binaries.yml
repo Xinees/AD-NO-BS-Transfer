@@ -1,0 +1,36 @@
+name: Temporary binary transfer
+
+on:
+  push:
+    branches:
+      - transfer/binaries
+    paths:
+      - .github/workflows/transfer-binaries.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout transfer repository
+        uses: actions/checkout@v4
+
+      - name: Verify input JARs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "ec_ad-forge-1.20.1-1.0.4.jar"
+          test -s "astemirlib_re-1.20.1-forge-1.2.98-SNAPSHOT.jar"
+          sha256sum "ec_ad-forge-1.20.1-1.0.4.jar" "astemirlib_re-1.20.1-forge-1.2.98-SNAPSHOT.jar"
+
+      - name: Upload original JAR files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ad-no-bs-original-jars
+          path: |
+            ec_ad-forge-1.20.1-1.0.4.jar
+            astemirlib_re-1.20.1-forge-1.2.98-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 1
