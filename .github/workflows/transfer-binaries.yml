@@ -1,4 +1,4 @@
-name: Temporary binary transfer
+name: Temporary binary transfer and decompilation
 
 on:
   push:
@@ -11,19 +11,76 @@ permissions:
   contents: read
 
 jobs:
-  package:
+  recover:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout transfer repository
         uses: actions/checkout@v4
 
-      - name: Verify input JARs
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify original JARs
         shell: bash
         run: |
           set -euo pipefail
           test -s "ec_ad-forge-1.20.1-1.0.4.jar"
           test -s "astemirlib_re-1.20.1-forge-1.2.98-SNAPSHOT.jar"
           sha256sum "ec_ad-forge-1.20.1-1.0.4.jar" "astemirlib_re-1.20.1-forge-1.2.98-SNAPSHOT.jar"
+
+      - name: Download CFR decompiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://repo.maven.apache.org/maven2/org/benf/cfr/0.152/cfr-0.152.jar" \
+            --output cfr-0.152.jar
+          test -s cfr-0.152.jar
+
+      - name: Decompile Archie's Dinosaurs only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovered/src/main/java recovered/src/main/resources
+          java -jar cfr-0.152.jar "ec_ad-forge-1.20.1-1.0.4.jar" \
+            --outputdir recovered/src/main/java \
+            --silent true
+
+      - name: Extract original mod resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p resource-dump
+          unzip -q "ec_ad-forge-1.20.1-1.0.4.jar" -d resource-dump
+          find resource-dump -type f -name '*.class' -delete
+          cp -a resource-dump/. recovered/src/main/resources/
+          cat > recovered/RECOVERY-NOTES.txt <<'EOF'
+          Decompiled from ec_ad-forge-1.20.1-1.0.4.jar using CFR 0.152.
+          Original resources were extracted from the same JAR without modification.
+          Astemir Re Lib was not decompiled or modified.
+          Decompiled Java is a recovery baseline and may require manual cleanup
+          before it can be compiled as a Gradle project.
+          EOF
+
+      - name: Create recovery archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip -qr ad-no-bs-decompiled-source.zip recovered
+          echo "Java files: $(find recovered/src/main/java -type f -name '*.java' | wc -l)"
+          echo "Resource files: $(find recovered/src/main/resources -type f | wc -l)"
+          ls -lh ad-no-bs-decompiled-source.zip
+
+      - name: Upload recovered source and resources
+        uses: actions/upload-artifact@v4
+        with:
+          name: ad-no-bs-decompiled-source
+          path: ad-no-bs-decompiled-source.zip
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Upload original JAR files
         uses: actions/upload-artifact@v4
